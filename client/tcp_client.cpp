@@ -4,15 +4,19 @@
 
 using namespace boost::asio;
 
-tcp_client::tcp_client(const std::string &path, const std::string &address, boost::asio::io_service &service, int port)
+tcp_client::tcp_client(const std::string &path, const std::string &address, boost::asio::io_service &service, int port, size_t buffer_size)
         : socket(service) {
     this->file_path = path;
-    this->port = port;
-    this->address = address::from_string(address);
+    if (file_path.length() > 4096) {
+        throw std::invalid_argument("too long file name!");
+    }
     auto file_size = std::filesystem::file_size(this->file_path);
     if (file_size >= TERABYTE) {
-        std::cerr << "too big file!" << std::endl;
+        throw std::invalid_argument("too big file!");
     }
+    this->buffer_size = buffer_size;
+    this->port = port;
+    this->address = address::from_string(address);
 }
 
 void tcp_client::send_file() {
@@ -36,11 +40,11 @@ void tcp_client::send_file() {
         return;
     }
     std::cout << this->file_path + '\0' + std::to_string(std::filesystem::file_size(this->file_path)) + "\r\n";
-    std::vector<char> buffer(20000);
+    std::vector<char> buffer(this->buffer_size);
     while (!file.eof() && !server_response.empty()) {
         std::string cur_time = std::to_string(timer::get_time());
         std::copy(cur_time.begin(), cur_time.end(), buffer.begin());
-        file.read(buffer.data() + time_size, 20000 - time_size);
+        file.read(buffer.data() + time_size, this->buffer_size - time_size);
         auto bytesRead = file.gcount() + time_size;
         write(socket, boost::asio::buffer(buffer, bytesRead));
 

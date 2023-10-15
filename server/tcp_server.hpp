@@ -14,9 +14,10 @@ class tcp_server {
 private:
     int port;
     boost::asio::io_service& service;
+    size_t buffer_size;
 public:
 
-    tcp_server(int port, boost::asio::io_service& service);
+    tcp_server(int port, boost::asio::io_service& service, size_t buffer_size);
 
     [[noreturn]] void receive_files();
 

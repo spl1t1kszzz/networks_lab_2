@@ -1,8 +1,9 @@
 #include "tcp_server.hpp"
 #include "tcp_handler.hpp"
 
-tcp_server::tcp_server(int port, boost::asio::io_service &service) : service(service) {
+tcp_server::tcp_server(int port, boost::asio::io_service &service, size_t buffer_size) : service(service) {
     this->port = port;
+    this->buffer_size = buffer_size;
 }
 
 
@@ -14,7 +15,7 @@ void tcp_server::receive_files() {
         tcp::socket clientSocket(this->service);
         acceptor.accept(clientSocket);
         boost::asio::io_service ioService;
-        tcp_handler handler(20000);
+        tcp_handler handler(this->buffer_size);
         std::thread(&tcp_handler::connection_handler, handler, std::move(clientSocket)).detach();
     }
 
