@@ -29,6 +29,8 @@ public:
 
     bool my_completion_condition(const boost::system::error_code &ec, std::size_t bytes_transferred) const;
 
+    std::string to_utf8_string(const std::string& string);
+
 
 };
 

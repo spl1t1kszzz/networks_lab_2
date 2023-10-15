@@ -9,18 +9,18 @@ bool tcp_handler::my_completion_condition(const boost::system::error_code &ec, s
 
 
 void tcp_handler::connection_handler(tcp::socket socket) {
-    boost::asio::io_service ioService;
-    boost::asio::deadline_timer timer(ioService, boost::posix_time::seconds(3));
+    // getting time length, file name and size
     boost::asio::streambuf stream_buffer;
-    // getting file name and size
     size_t bytes_read = boost::asio::read_until(socket, stream_buffer, "\r\n");
     std::istream filename_size_stream(&stream_buffer);
     std::string filename_size;
+    // since boost::asio::read_until may read extra data from the socket, we need to extract it
     auto extra_data = stream_buffer.size() - bytes_read;
     std::getline(filename_size_stream, filename_size);
-    std::string filename = filename_size.substr(0, filename_size.find('\0'));
-    this->file_size = std::stoll(filename_size.substr(filename_size.find('\0') + 1, filename_size.find('\t')));
+    std::string filename = this->to_utf8_string(filename_size.substr(0, filename_size.find('\0')));
+    this->file_size = std::stoll(this->to_utf8_string(filename_size.substr(filename_size.find('\0') + 1, filename_size.find('\t'))));
     this->time_size = std::stoll(filename_size.substr(filename_size.find('\t') + 1, bytes_read));
+
     if (std::filesystem::exists("uploads/" + filename)) {
         std::cerr << "this file is already exists!" << std::endl;
         boost::asio::write(socket, boost::asio::buffer("rename the file plz\r\r\r"));
@@ -29,6 +29,7 @@ void tcp_handler::connection_handler(tcp::socket socket) {
     } else {
         boost::asio::write(socket, boost::asio::buffer("ok\r\r\r"));
     }
+
     std::ofstream file("uploads/" + filename, std::ios::out);
     if (!file.is_open()) {
         std::cerr << "File not open: uploads/test.txt" << std::endl;
@@ -94,8 +95,11 @@ tcp_handler::tcp_handler(size_t buffer_size) {
     this->buff_size = buffer_size;
     this->buffer.resize(buffer_size);
     this->all_bytes_read = 0;
-
 }
 
 
-
+std::string tcp_handler::to_utf8_string(const std::string &string) {
+    std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
+    std::wstring wide_string(string.begin(), string.end());
+    return converter.to_bytes(wide_string);
+}
