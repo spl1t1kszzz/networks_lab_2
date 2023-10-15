@@ -1,6 +1,12 @@
 #include <boost/bind/bind.hpp>
 #include "server/tcp_handler.hpp"
 
+bool tcp_handler::my_completion_condition(const boost::system::error_code &ec, std::size_t bytes_transferred) const {
+    // last packet handle
+    size_t lastMessageSize = this->file_size % (this->buff_size - this->time_size);
+    return (ec || bytes_transferred - this->time_size == lastMessageSize);
+}
+
 
 void tcp_handler::connection_handler(tcp::socket socket) {
     boost::asio::io_service ioService;
@@ -13,8 +19,8 @@ void tcp_handler::connection_handler(tcp::socket socket) {
     auto extra_data = stream_buffer.size() - bytes_read;
     std::getline(filename_size_stream, filename_size);
     std::string filename = filename_size.substr(0, filename_size.find('\0'));
-    this->file_size = std::stoul(filename_size.substr(filename_size.find('\0') + 1, filename_size.find('\t')));
-    auto time_size = std::stoul(filename_size.substr(filename_size.find('\t') + 1, bytes_read));
+    this->file_size = std::stoll(filename_size.substr(filename_size.find('\0') + 1, filename_size.find('\t')));
+    this->time_size = std::stoll(filename_size.substr(filename_size.find('\t') + 1, bytes_read));
     if (std::filesystem::exists("uploads/" + filename)) {
         std::cerr << "this file is already exists!" << std::endl;
         boost::asio::write(socket, boost::asio::buffer("rename the file plz\r\r\r"));
@@ -53,28 +59,25 @@ void tcp_handler::connection_handler(tcp::socket socket) {
                 udp_socket.send_to(boost::asio::buffer(filename + ": done"), end);
                 break;
             }
+            auto readHandler = [this](auto &&PH1, auto &&PH2) {
+                return my_completion_condition(std::forward<decltype(PH1)>(PH1), std::forward<decltype(PH2)>(PH2));
+            };
             bytesReceived =
-                    boost::asio::read(socket, boost::asio::buffer(this->buffer), boost::asio::transfer_at_least(1)) -
-                    time_size;
+                    boost::asio::read(socket, boost::asio::buffer(this->buffer), readHandler) -
+                    this->time_size;
             auto end_receive = timer::get_time();
             this->all_bytes_read += bytesReceived;
-            try {
-                this->send_time = std::stoll(std::string(this->buffer.begin(), this->buffer.begin() + time_size));
-            } catch (const std::invalid_argument& ex) {
-                std::cerr << bytesReceived << std::endl;
-                std::cerr << std::string(this->buffer.begin(), this->buffer.begin() + time_size) << std::endl;
-                throw ex;
-            }
+            this->send_time = std::stoll(std::string(this->buffer.begin(), this->buffer.begin() + time_size));
             long double time_for_receive = (end_receive - this->send_time) / 1000000.0;
             long double all_time = (end_receive - start) / 1000000.0;
 
             long double current_speed = (bytesReceived / 1024.0 / 1024.0) / time_for_receive;
             long double average_speed = (this->all_bytes_read / 1024.0 / 1024.0) / all_time;
-            std::cout << bytesReceived << ' ' << end_receive - this->send_time << ", cur: " << current_speed << " MB/s avg: " << average_speed << std::endl;
-
-            //udp_socket.send_to(boost::asio::buffer(
-                 //   filename + ": " + std::to_string(current_speed) + " (average " + std::to_string(average_speed) + " MB/s)"), end);
-            //file.write(buffer.data() + time_size, bytesReceived);
+            std::cout << "ping: " << end_receive - this->send_time << ", cur: " << current_speed << " MB/s avg: "
+                      << average_speed << std::endl;
+            udp_socket.send_to(boost::asio::buffer(
+                    filename + ": " + std::to_string(current_speed) + " (average " + std::to_string(average_speed) + " MB/s)"), end);
+            file.write(buffer.data() + this->time_size, bytesReceived);
         } catch (boost::system::system_error &e) {
             boost::asio::write(socket, boost::asio::buffer(std::string(e.what())));
             break;
@@ -88,6 +91,7 @@ void tcp_handler::connection_handler(tcp::socket socket) {
 }
 
 tcp_handler::tcp_handler(size_t buffer_size) {
+    this->buff_size = buffer_size;
     this->buffer.resize(buffer_size);
     this->all_bytes_read = 0;
 
